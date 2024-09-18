@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "A brief one-line or two-line summary of the repository contents and their suitability as example code."
+    },
+    "has_tests": {
+      "type": "boolean",
+      "description": "Indicates if this repository mentions running code tests."
+    },
+    "level_of_detail": {
+      "type": "integer",
+      "description": "Rate the level of detail of the README on a scale from 1-10",
+      "minimum": 1,
+      "maximum": 10
+    },
+    "is_application": {
+      "type": "boolean",
+      "description": "Indicates if this repository is a standalone application."
+    },
+    "is_samples": {
+      "type": "boolean",
+      "description": "Indicates if this repository includes a set of samples of example code."
+    },
+    "service_names": {
+      "type": "array",
+      "description": "An array of AWS services mentioned in the README.",
+      "items": { "type": "string" }
+    }
+  },
+  "required": [
+    "summary",
+    "has_tests",
+    "level_of_detail",
+    "is_application",
+    "is_samples",
+    "service_namess"
+  ]
+}
