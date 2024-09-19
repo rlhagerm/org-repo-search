@@ -1,7 +1,7 @@
 {
   "bedrockmodel": "anthropic.claude-3-sonnet-20240229-v1:0",
   "outputfile": "repo_details.csv",
-  "yearsincluded": 1,
+  "yearsincluded": 2,
   "sdklanguages": [
     "C#",
     "C++",
@@ -16,7 +16,9 @@
     "Swift"
   ],
   "ignorerepos": [
-    "serverless-samples"
+    "serverless-samples",
+    "aws-cdk-examples",
+    "aws-net-guides"
   ],
   "repocriteria": [
     {
@@ -39,19 +41,19 @@
       "name": "summary",
       "type": "string",
       "description": "A brief one-line or two-line summary of the repository contents and their suitability as example code.",
-      "weight": 0.15
+      "weight": 0
     },
     {
       "name": "hasTests",
       "type": "boolean",
-      "description": "Indicates if this repository mentions running any code tests.",
+      "description": "Indicates if this repository mentions any unit or integration tests.",
       "weight": 0.15
     },
     {
       "name": "levelOfDetail",
       "type": "integer",
       "description": "Rate the level of detail of the README on a scale from 1-10.",
-      "weight": 0.15,
+      "weight": 0.22,
       "minimum": 1,
       "maximum": 10
     },
@@ -59,12 +61,12 @@
       "name": "isApplication",
       "type": "boolean",
       "description": "Indicates if this repository is a standalone application.",
-      "weight": 0.15
+      "weight": 0.08
     },
     {
       "name": "isSamples",
       "type": "boolean",
-      "description": "Indicates if this repository includes a set independent of code examples or code samples, instead of one large application.",
+      "description": "Indicates if this repository includes a set of discrete code examples or code samples covering various topics, instead of a standalone single application.",
       "weight": 0.15
     }
   ]

@@ -40,6 +40,7 @@ public static class OrgRepoSearchRunner
             string json = r.ReadToEnd();
             searchConfig = JsonSerializer.Deserialize<SearchConfig>(json, new JsonSerializerOptions(){PropertyNameCaseInsensitive = true});
         }
+        bedrockService.GenerateSpec(searchConfig);
 
         var pat = "";
         Console.WriteLine("Enter your GitHub user access token:");
@@ -50,8 +51,6 @@ public static class OrgRepoSearchRunner
         orgName = Console.ReadLine();
 
         var yearsToInclude = searchConfig!.YearsIncluded;
-
-
         var languageList = searchConfig.SdkLanguages;
 
         Console.WriteLine($"Generating repository list from {orgName} organization:");
@@ -63,10 +62,10 @@ public static class OrgRepoSearchRunner
             var tokenAuth = new Credentials(pat);
             client.Credentials = tokenAuth;
 
-            var repos = await client.Repository.GetAllForOrg(orgName,
-                new ApiOptions() { PageCount = 40, PageSize = 10 });
+            //var repos = await client.Repository.GetAllForOrg(orgName,
+           //     new ApiOptions() { PageCount = 40, PageSize = 10 });
 
-            //var repos = await client.Repository.GetAllForOrg(orgName);
+            var repos = await client.Repository.GetAllForOrg(orgName);
             var minUpdatedDate = DateTime.Today.AddYears(-yearsToInclude);
             List<RepoDetails> repoDetailsList = new List<RepoDetails>();
             var totalRepoCount = repos.Count;
@@ -75,8 +74,8 @@ public static class OrgRepoSearchRunner
             var taskList = new List<Task<bool>>();
             // Order by most recent first.
             repos = repos.OrderByDescending(r => r.PushedAt?.DateTime.Date).ToList();
-            // Discard those not updated in the last year.
-            repos = repos.Where(r => r.PushedAt?.DateTime.Date > DateTime.Today.AddYears(-yearsToInclude)).ToList();
+            // Discard those not updated in the last year and those marked to ignore.
+            repos = repos.Where(r => r.PushedAt?.DateTime.Date > DateTime.Today.AddYears(-yearsToInclude) && !searchConfig.IgnoreRepos.Contains(r.Name)).ToList();
             var discardCount = totalRepoCount - repos.Count;
             Console.WriteLine($"***Rejected {discardCount} repos not updated after {minUpdatedDate.ToShortDateString()}.");
             var noReadmeCount = 0;
@@ -90,10 +89,11 @@ public static class OrgRepoSearchRunner
                     {
                         Name = repository.Name,
                         Language = repository.Language,
-                        Url = repository.Url,
+                        Url = repository.HtmlUrl,
                         LastModified = repository.PushedAt?.DateTime.Date ??
                                        DateTime.MinValue.Date,
                         Summary = repository.Description,
+                        OpenIssuesCount = repository.OpenIssuesCount
                     };
                     foreach (var repoCriteria in searchConfig.RepoCriteria)
                     {
@@ -105,38 +105,29 @@ public static class OrgRepoSearchRunner
                         }
                     }
 
-                    //repoDetails.AddCriterion("Forks", "Forks", 0.15, repository.ForksCount);
-                    //repoDetails.AddCriterion("Stars", "Stars", 0.25, repository.StargazersCount);
-
-                    //if (repoDetails.Stars > 100 && repoDetails.LastModified > DateTime.Today.AddYears(-yearsToInclude) && (limitcount < 10))
-                    //if (repoDetails.LastModified > DateTime.Today.AddYears(-yearsToInclude))
+                    // Try to get the content of the README file, to be used to generate tool results with Bedrock.
+                    Console.WriteLine($"Fetching README contents for repository {repoDetails.Name}.");
+                    try
                     {
-                        // Try to get the content of the README file, to be used to generate tool results with Bedrock.
-                        Console.WriteLine($"Fetching README contents for repository {repoDetails.Name}.");
-                        try
-                        {
-                            var readme =
-                                await client.Repository.Content.GetReadme(repository.Id);
-                            var readmeContent = readme.Content;
+                        var readme =
+                            await client.Repository.Content.GetReadme(repository.Id);
+                        var readmeContent = readme.Content;
 
-                            byte[] byteArray =
-                                System.Text.Encoding.ASCII.GetBytes(readmeContent);
-                            MemoryStream stream = new MemoryStream(byteArray);
-                            Thread.Sleep(200);
-                            var summaryResponseTask =
-                                bedrockService.MakeRequest("readmeContent", stream, repoDetails, searchConfig);
-                            taskList.Add(summaryResponseTask);
+                        byte[] byteArray =
+                            System.Text.Encoding.ASCII.GetBytes(readmeContent);
+                        MemoryStream stream = new MemoryStream(byteArray);
+                        Thread.Sleep(200);
+                        var summaryResponseTask =
+                            bedrockService.MakeRequest("readmeContent", stream, repoDetails, searchConfig);
+                        taskList.Add(summaryResponseTask);
 
-                            repoDetailsList.Add(repoDetails);
-                        }
-                        catch (Exception ex)
-                        {
-                            noReadmeCount++;
-                            Console.WriteLine(
-                                $"unable to get readme for {repoDetails.Name}, {ex.Message}");
-                        }
-
-                        limitcount++;
+                        repoDetailsList.Add(repoDetails);
+                    }
+                    catch (Exception ex)
+                    {
+                        noReadmeCount++;
+                        Console.WriteLine(
+                            $"unable to get readme for {repoDetails.Name}, {ex.Message}");
                     }
                 }
                 else
@@ -144,10 +135,12 @@ public static class OrgRepoSearchRunner
                     notSdkLanguageCount++;
                 }
             }
-            Console.WriteLine($"***Rejected {noReadmeCount} repos that do not have a README.");
-            Console.WriteLine($"***Rejected {notSdkLanguageCount} repos that do not use an SDK language.");
+            
             var summaryResults = await Task.WhenAll(taskList);
             Console.WriteLine($"AI results returned true: {summaryResults.Count(s => s)}.");
+
+            Console.WriteLine($"***Rejected {noReadmeCount} repos that do not have a README.");
+            Console.WriteLine($"***Rejected {notSdkLanguageCount} repos that do not use an SDK language.");
 
             var deprecatedCount = repoDetailsList.Where(r => r.IsDeprecated).Count();
 
@@ -175,20 +168,6 @@ public static class OrgRepoSearchRunner
                     }
                 }
             }
-
-            // Generate the rankings.
-            repoDetailsList = repoDetailsList.OrderBy(r => r.Stars).Select((r, i) =>
-            {
-                r.StarsRank = i;
-                return r;
-            }).ToList();
-
-            repoDetailsList = repoDetailsList.OrderBy(r => r.Forks).Select((r, i) =>
-            {
-                r.ForksRank = i;
-                return r;
-            }).ToList();
-
 
             // Order the list.
             repoDetailsList =
