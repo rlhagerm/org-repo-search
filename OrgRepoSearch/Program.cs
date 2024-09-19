@@ -1,21 +1,20 @@
-﻿// See https://aka.ms/new-console-template for more information
-using CsvHelper;
-using Octokit;
-using OrgRepoSearch;
-using System.Globalization;
-using System.IO;
+﻿using System.Globalization;
+using System.Text.Json;
 using Amazon.BedrockRuntime;
-using Microsoft.Extensions.Logging;
+using CsvHelper;
+using CsvHelper.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
 using Microsoft.Extensions.Logging.Debug;
-using System.Reflection.PortableExecutable;
-using CsvHelper.Configuration;
-using Amazon.Auth.AccessControlPolicy;
-using System;
-using System.Text.Json;
+using Octokit;
 
+namespace OrgRepoSearch;
+
+/// <summary>
+/// Run the utility to search for repositories within an organization.
+/// </summary>
 public static class OrgRepoSearchRunner
 {
     public static async Task Main(string[] args)
@@ -38,7 +37,7 @@ public static class OrgRepoSearchRunner
         using (StreamReader r = new StreamReader("repo_search_config.json"))
         {
             string json = r.ReadToEnd();
-            searchConfig = JsonSerializer.Deserialize<SearchConfig>(json, new JsonSerializerOptions(){PropertyNameCaseInsensitive = true});
+            searchConfig = JsonSerializer.Deserialize<SearchConfig>(json, new JsonSerializerOptions() { PropertyNameCaseInsensitive = true });
         }
         bedrockService.GenerateSpec(searchConfig);
 
@@ -63,7 +62,7 @@ public static class OrgRepoSearchRunner
             client.Credentials = tokenAuth;
 
             //var repos = await client.Repository.GetAllForOrg(orgName,
-           //     new ApiOptions() { PageCount = 40, PageSize = 10 });
+            //     new ApiOptions() { PageCount = 40, PageSize = 10 });
 
             var repos = await client.Repository.GetAllForOrg(orgName);
             var minUpdatedDate = DateTime.Today.AddYears(-yearsToInclude);
@@ -118,7 +117,7 @@ public static class OrgRepoSearchRunner
                         MemoryStream stream = new MemoryStream(byteArray);
                         Thread.Sleep(200);
                         var summaryResponseTask =
-                            bedrockService.MakeRequest("readmeContent", stream, repoDetails, searchConfig);
+                            bedrockService.MakeRepoToolRequest(stream, repoDetails, searchConfig);
                         taskList.Add(summaryResponseTask);
 
                         repoDetailsList.Add(repoDetails);
@@ -135,14 +134,14 @@ public static class OrgRepoSearchRunner
                     notSdkLanguageCount++;
                 }
             }
-            
+
             var summaryResults = await Task.WhenAll(taskList);
             Console.WriteLine($"AI results returned true: {summaryResults.Count(s => s)}.");
 
             Console.WriteLine($"***Rejected {noReadmeCount} repos that do not have a README.");
             Console.WriteLine($"***Rejected {notSdkLanguageCount} repos that do not use an SDK language.");
 
-            var deprecatedCount = repoDetailsList.Where(r => r.IsDeprecated).Count();
+            var deprecatedCount = repoDetailsList.Count(r => r.IsDeprecated);
 
             // Remove deprecated repositories before ranking.
             repoDetailsList =

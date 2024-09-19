@@ -66,7 +66,7 @@
     {
       "name": "isSamples",
       "type": "boolean",
-      "description": "Indicates if this repository includes a set of discrete code examples or code samples covering various topics, instead of a standalone single application.",
+      "description": "Indicates if this repository includes a set of discrete code examples or code samples covering various topics.",
       "weight": 0.15
     }
   ]

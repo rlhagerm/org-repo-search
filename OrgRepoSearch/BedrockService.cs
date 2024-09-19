@@ -5,6 +5,9 @@ using Amazon.Runtime.Documents;
 
 namespace OrgRepoSearch;
 
+/// <summary>
+/// Service that wraps calls made to the Bedrock API for LLM responses.
+/// </summary>
 public class BedrockService
 {
     private static readonly string bedrockToolName = "summarize_repository";
@@ -14,8 +17,15 @@ public class BedrockService
         _amazonBedrockRuntime = amazonBedrockRuntime;
     }
 
+    /// <summary>
+    /// The tool specification used in the Converse API.
+    /// </summary>
     public static Document ToolSpec { get; set; }
 
+    /// <summary>
+    /// Generate the Tool Specification document as a static property.
+    /// </summary>
+    /// <param name="config">The configuration for the search and criteria.</param>
     public void GenerateSpec(SearchConfig config)
     {
         dynamic toolProperties = new ExpandoObject();
@@ -37,7 +47,6 @@ public class BedrockService
         var toolPropertiesAsDictionary = toolProperties as IDictionary<string, object>;
         var required = config.GenAiCriteria.Select(c => c.Name).ToArray();
         required = required.Concat(new[] { "isDeprecated", "serviceNames" }).ToArray();
-
 
         foreach (var criteria in config.GenAiCriteria)
         {
@@ -64,7 +73,14 @@ public class BedrockService
         BedrockService.ToolSpec = toolSpecDocument;
     }
 
-    public async Task<bool> MakeRequest(string content, MemoryStream contentMemoryStream, RepoDetails details, SearchConfig config)
+    /// <summary>
+    /// Make the Bedrock Converse tool request with the README document as an attachment.
+    /// </summary>
+    /// <param name="contentMemoryStream">Memory stream of the README contents.</param>
+    /// <param name="details">The object wrapping the repository details information.</param>
+    /// <param name="config">Common search config, containing the criteria.</param>
+    /// <returns>True if successful.</returns>
+    public async Task<bool> MakeRepoToolRequest(MemoryStream contentMemoryStream, RepoDetails details, SearchConfig config)
     {
         // Set the model ID, e.g., Claude 3 sonnet
         var modelId = config.BedrockModel;
@@ -101,8 +117,8 @@ public class BedrockService
                         {
                             Document = new DocumentBlock()
                             {
-                                Format = DocumentFormat.Md, 
-                                Name = "README", 
+                                Format = DocumentFormat.Md,
+                                Name = "README",
                                 Source = new DocumentSource()
                                 {
                                     Bytes = contentMemoryStream
@@ -112,7 +128,11 @@ public class BedrockService
                     }
                 }
             },
-            InferenceConfig = new InferenceConfiguration(){MaxTokens = 2000, Temperature = 0},
+            InferenceConfig = new InferenceConfiguration()
+            {
+                MaxTokens = 2000,
+                Temperature = 0
+            },
             ToolConfig = new ToolConfiguration()
             {
                 Tools = new List<Tool>()
@@ -140,8 +160,8 @@ public class BedrockService
             if (response.StopReason == StopReason.Tool_use)
             {
                 var responseContent = response.Output.Message.Content;
-                // first tool use
-                var toolUseBlock = responseContent.FirstOrDefault(t =>
+                // First tool use contains the responses for that tool.
+                var toolUseBlock = responseContent.First(t =>
                     t.ToolUse.Name == bedrockToolName);
 
                 Console.WriteLine($"Finished Bedrock Converse request for {details.Name}.");
@@ -196,11 +216,11 @@ public class BedrockService
         }
         catch (AmazonBedrockRuntimeException e)
         {
-            Console.WriteLine($"ERROR: Can't invoke '{modelId}'. Reason: {e.Message}");
+            Console.WriteLine($"Bedrock ERROR: Can't invoke '{modelId}'. Reason: {e.Message}");
         }
         catch (Exception e)
         {
-            Console.WriteLine($"ERROR: Can't process Bedrock response. Reason: {e.Message}");
+            Console.WriteLine($"ERROR: Failure making the request. Reason: {e.Message}");
         }
 
         return false;
