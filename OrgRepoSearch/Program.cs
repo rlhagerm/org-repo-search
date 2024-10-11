@@ -74,11 +74,12 @@ public static class OrgRepoSearchRunner
             // Order by most recent first.
             repos = repos.OrderByDescending(r => r.PushedAt?.DateTime.Date).ToList();
             // Discard those not updated in the last year and those marked to ignore.
-            repos = repos.Where(r => r.PushedAt?.DateTime.Date > DateTime.Today.AddYears(-yearsToInclude) && !searchConfig.IgnoreRepos.Contains(r.Name)).ToList();
+            repos = repos.Where(r => r.PushedAt?.DateTime.Date > DateTime.Today.AddYears(-yearsToInclude) && !searchConfig.IgnoreRepos.Contains(r.Name) && !r.Archived).ToList();
             var discardCount = totalRepoCount - repos.Count;
-            Console.WriteLine($"***Rejected {discardCount} repos not updated after {minUpdatedDate.ToShortDateString()}.");
+            Console.WriteLine($"***Rejected {discardCount} repos that are archived, ignored, or not updated after {minUpdatedDate.ToShortDateString()}.");
             var noReadmeCount = 0;
             var notSdkLanguageCount = 0;
+            var noNewCommits = 0;
             foreach (var repository in repos)
             {
                 if (languageList.Contains(repository.Language))
@@ -89,8 +90,7 @@ public static class OrgRepoSearchRunner
                         Name = repository.Name,
                         Language = repository.Language,
                         Url = repository.HtmlUrl,
-                        LastModified = repository.PushedAt?.DateTime.Date ??
-                                       DateTime.MinValue.Date,
+                        LastModified = repository.UpdatedAt.Date,
                         Summary = repository.Description,
                         OpenIssuesCount = repository.OpenIssuesCount
                     };
@@ -120,7 +120,20 @@ public static class OrgRepoSearchRunner
                             bedrockService.MakeRepoToolRequest(stream, repoDetails, searchConfig);
                         taskList.Add(summaryResponseTask);
 
-                        repoDetailsList.Add(repoDetails);
+                        var lastcommit =
+                            await client.Repository.Commit.Get(repository.Id, "HEAD");
+
+                        Console.WriteLine($"last commit for {repository.Name} at {lastcommit.Commit.Committer.Date.Date}");
+                        repoDetails.LastModified = lastcommit.Commit.Committer.Date.Date;
+                        if (repoDetails.LastModified >
+                            DateTime.Today.AddYears(-yearsToInclude))
+                        {
+                            repoDetailsList.Add(repoDetails);
+                        }
+                        else
+                        {
+                            noNewCommits++;
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -140,6 +153,7 @@ public static class OrgRepoSearchRunner
 
             Console.WriteLine($"***Rejected {noReadmeCount} repos that do not have a README.");
             Console.WriteLine($"***Rejected {notSdkLanguageCount} repos that do not use an SDK language.");
+            Console.WriteLine($"***Rejected {noNewCommits} repos with no commits in the last {yearsToInclude} years.");
 
             var deprecatedCount = repoDetailsList.Count(r => r.IsDeprecated);
 
@@ -147,6 +161,12 @@ public static class OrgRepoSearchRunner
             repoDetailsList =
                 repoDetailsList.Where(r => !r.IsDeprecated).ToList();
             Console.WriteLine($"***Rejected {deprecatedCount} repos marked as deprecated.");
+
+            // Remove repositories with no aws services before ranking.
+            var noServiceCount = repoDetailsList.Count(r => string.IsNullOrEmpty(r.ServiceNames));
+            repoDetailsList =
+                repoDetailsList.Where(r => !string.IsNullOrEmpty(r.ServiceNames)).ToList();
+            Console.WriteLine($"***Rejected {noServiceCount} repos without an AWS service.");
             var criteriaWeights = repoDetailsList.First().Criterion;
 
             var totalCount = repoDetailsList.Count;
